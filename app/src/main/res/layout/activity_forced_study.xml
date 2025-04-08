@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/studyLayout"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:gravity="center"
+    android:padding="16dp">
+
+    <!-- 현재 학습 중인 단어 -->
+    <TextView
+        android:id="@+id/tvWord"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="apple"
+        android:textSize="28sp"
+        android:layout_marginTop="100dp" />
+
+    <!-- 단어 뜻 -->
+    <TextView
+        android:id="@+id/tvMeaning"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="사과"
+        android:textSize="20sp"
+        android:layout_marginTop="16dp" />
+
+    <!-- 다음 단어로 넘어가기 버튼 -->
+    <Button
+        android:id="@+id/btnNext"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="넘기기"
+        android:layout_marginTop="32dp" />
+
+</LinearLayout>
