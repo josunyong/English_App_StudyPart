@@ -39,7 +39,7 @@ object WordManager {
         }
     }
 
-    // 퀴즈 결과 반영: correctCount 업데이트
+    // 퀴즈 결과 반영: correctCount 업데이트 후 업데이트된 단어 반환
     fun updateQuizCount(wordId: Int, isCorrect: Boolean): Word? {
         val word = findWordById(wordId)
         word?.let {
@@ -64,7 +64,7 @@ object WordManager {
                 Log.d(TAG,"Word ID $wordId ('${it.word}') marked studied after quiz attempt")
             }
         }
-        return word // 업데이트된 단어 반환 (오답 시 강제 학습에 사용 위함)
+        return word // 업데이트된 단어 반환 (오답 시 강제 학습 및 카운터 즉시 업데이트에 사용)
     }
 
     // --- 시나리오 반영: 후보 단어 선정 ---

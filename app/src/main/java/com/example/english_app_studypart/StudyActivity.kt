@@ -92,4 +92,9 @@ class StudyActivity : AppCompatActivity() {
         // 현재 StudyActivity 종료 (다음 화면으로 넘어갔으므로)
         finish()
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Log.d(TAG, "onDestroy called.")
+    }
 }

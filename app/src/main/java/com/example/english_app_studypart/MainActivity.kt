@@ -63,5 +63,8 @@ class MainActivity : AppCompatActivity() {
             }
             // finish() // 이 경우에도 MainActivity 종료 결정 필요
         }
+        // 버튼 클릭으로 시작하는 경우, MainActivity를 계속 유지할 수 있습니다.
+        // 앱 시작 시 바로 학습을 시작하고 MainActivity를 종료하는 것이 더 일반적일 수 있습니다.
+        // finish() // 필요에 따라 주석 해제/추가
     }
 }

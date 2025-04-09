@@ -31,6 +31,7 @@ class QuizActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityQuizBinding.inflate(layoutInflater)
         setContentView(binding.root)
+        // 버튼 리스트에 버튼 추가 (ViewBinding 사용 시 binding.btnOption1 등 사용)
         optionButtons.addAll(listOf(binding.btnOption1, binding.btnOption2, binding.btnOption3, binding.btnOption4))
         Log.d(TAG, "onCreate called.")
 
@@ -63,7 +64,7 @@ class QuizActivity : AppCompatActivity() {
         Log.d(TAG, "Setting up quiz for Word ID: ${quizWord.id} ('${quizWord.word}')")
         binding.tvQuizWord.text = quizWord.word
         // --- 시나리오 반영: 카운터 표시 (현재 단어의 상태) ---
-        binding.tvQuizCounter.text = "맞춘 횟수: ${quizWord.correctCount}/3" // 기존 로직 유지
+        binding.tvQuizCounter.text = "맞춘 횟수: ${quizWord.correctCount}/3" // 초기 카운터 설정
         correctAnswer = quizWord.meaning // 정답 저장
 
         // --- 시나리오 반영: 선택지 생성 로직 (기존 로직 활용) ---
@@ -80,19 +81,25 @@ class QuizActivity : AppCompatActivity() {
             Log.w(TAG, "Not enough distinct incorrect options available! Adding placeholders.")
             val needed = 3 - incorrectOptions.size
             val placeholders = List(needed) { "오답 ${it + 1}" } // 고유한 Placeholder 생성 시도
-            incorrectOptions = (incorrectOptions + placeholders).distinct().take(3)
-            // 만약 placeholder와 정답이 겹치는 극단적 경우 발생 가능성 있음
+            // placeholder와 정답이 겹치지 않도록 필터링 추가 (선택 사항)
+            incorrectOptions = (incorrectOptions + placeholders.filter { it != correctAnswer }).distinct().take(3)
+            // 그래도 부족하면 그냥 진행하거나 에러 처리
+            if(incorrectOptions.size < 3) {
+                Log.e(TAG, "Still not enough options after adding placeholders.")
+                // 여기서 에러 처리 또는 기본 옵션 설정
+            }
         }
 
         // 정답 + 오답 합쳐서 섞고 버튼에 표시
         val options = (incorrectOptions + correctAnswer!!).shuffled()
-        if (options.size >= 4) { // 4개 이상이어야 함 (정상: 4개)
-            optionButtons[0].text = options[0]
-            optionButtons[1].text = options[1]
-            optionButtons[2].text = options[2]
-            optionButtons[3].text = options[3]
+        // 버튼 개수와 옵션 개수가 맞는지 확인 후 설정
+        if (options.size >= optionButtons.size) {
+            optionButtons.forEachIndexed { index, button ->
+                button.text = options[index]
+                button.isEnabled = true // 버튼 활성화
+            }
         } else {
-            Log.e(TAG, "Cannot setup options, final options count is less than 4.")
+            Log.e(TAG, "Cannot setup options, final options count (${options.size}) is less than button count (${optionButtons.size}).")
             // 오류 처리: 버튼 비활성화 또는 기본 텍스트 설정
             optionButtons.forEach { it.text = "Error"; it.isEnabled = false }
         }
@@ -106,7 +113,7 @@ class QuizActivity : AppCompatActivity() {
     private fun setupOptionButtonsListener() {
         optionButtons.forEach { button ->
             button.setOnClickListener {
-                if (isAnswerable) {
+                if (isAnswerable && button.isEnabled) { // 답변 가능하고 버튼이 활성화 상태일 때만
                     isAnswerable = false // 중복 클릭 방지
                     checkAnswer(button.text.toString())
                 }
@@ -122,11 +129,21 @@ class QuizActivity : AppCompatActivity() {
         Log.d(TAG, "Word ID ${quizWord.id} ('${quizWord.word}') - Selected: '$selectedMeaning', Correct: $isCorrect")
 
         // --- 시나리오 반영: WordManager 통해 상태 업데이트 ---
-        // 정답 여부에 따라 WordManager의 correctCount 업데이트
+        // 정답 여부에 따라 WordManager의 correctCount 업데이트 후, 업데이트된 객체 받기
         val updatedWord = WordManager.updateQuizCount(quizWord.id, isCorrect)
 
+        // --- ⭐ 최신 수정 반영: 카운터 즉시 업데이트 ⭐ ---
+        if (updatedWord != null) {
+            // 업데이트된 단어의 correctCount를 사용하여 TextView 텍스트 즉시 설정
+            binding.tvQuizCounter.text = "맞춘 횟수: ${updatedWord.correctCount}/3"
+            Log.d(TAG, "Quiz counter TextView updated to: ${binding.tvQuizCounter.text}")
+        } else {
+            Log.w(TAG, "Updated word was null after quiz count update for ID ${quizWord.id}. Counter not updated.")
+        }
+        // --- 카운터 즉시 업데이트 끝 ---
+
         // --- 시나리오 반영: 시각적 피드백 (O/X) ---
-        showFeedback(isCorrect)
+        showFeedback(isCorrect) // O/X 이미지 표시
 
         // --- 시나리오 반영: 결과 반환 대신 다음 화면 직접 결정 및 실행 ---
         // 일정 시간(FEEDBACK_DELAY_MS) 후 다음 화면으로 이동
