@@ -15,28 +15,22 @@ import com.example.english_app_studypart.datas.WordData
  * StudyActivity:
  *
  * [학습 규칙]
- * 1. Study 후보: 단어의 correctCount가 **0**인 단어들 → Study 화면에만 노출됨.
- *    - 단어가 Study 화면에 한 번이라도 표시되면 displayStudyWord()에서 hasStudied를 true로 설정합니다.
- * 2. Quiz 후보: 단어가 한 번이라도 Study 화면에 나타난(hasStudied == true) 단어 중,
- *    correctCount가 **0 ≤ correctCount ≤ 2** 인 단어들 → Quiz로 진행됩니다.
- * 3. 완전 암기: 단어가 hasStudied == true이고 correctCount가 **3**이면 학습 대상에서 제외됩니다.
+ * 1. Study 후보: 단어의 correctCount가 0인 단어들만 Study 화면에 노출됨.
+ * 2. Quiz 후보: 이미 Study 화면에 노출된 단어 중( hasStudied == true ),
+ *    correctCount가 0, 1, 또는 2 인 단어들로 진행.
+ * 3. 단어가 Quiz에서 정답 처리되면 correctCount가 증가하여 Study 후보에서 제외됨.
  *
- * [랜덤 전개 구조]
- * - 버튼 클릭 시, Study 후보(단어의 correctCount == 0) 중 현재 단어를 보여주다가,
- *   일정 확률(QUIZ_PROBABILITY)로 해당 단어를 Quiz로 전환하여 정답/오답에 따라 상태가 변하게 합니다.
- * - (수정 1) 만약 Quiz에서 오답이면 ForcedStudy를 통해 바로 그 단어를 보여줍니다.
- * - (수정 2) Study 후보 풀은 오직 correctCount가 0인 단어만 포함됩니다.
- *   만약 후보 풀이 없으면 (예: 모든 단어의 correctCount가 0보다 클 때) Quiz 화면으로만 진행합니다.
+ * 강제학습(ForcedStudy)은 주석 처리되어 있으므로, 오답 처리 시 대신 studyList를 재계산하도록 함.
  */
 class StudyActivity : AppCompatActivity() {
     private lateinit var binding: ActivityStudyBinding
 
-    // Study 후보 풀: 단어의 correctCount가 0인 단어들만(초기 구성 시 필터링)
+    // 초기 Study 후보: correctCount가 0인 단어들만
     private var studyList: MutableList<Word> = mutableListOf()
     private var currentIndex = 0
     private var lastQuizWord: Word? = null
 
-    // 확률: Study 화면에서 넘기기 대신 Quiz를 실행할 확률
+    // Study 화면에서 Quiz로 전환할 확률 (예: 40%)
     private val QUIZ_PROBABILITY = 0.4
     private var isProcessing = false
 
@@ -47,6 +41,7 @@ class StudyActivity : AppCompatActivity() {
     // QuizActivity 결과 수신 launcher
     private val quizActivityLauncher =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            isProcessing = false
             if (result.resultCode == Activity.RESULT_OK) {
                 val data = result.data
                 val quizResult = data?.getStringExtra("quiz_result")
@@ -59,42 +54,33 @@ class StudyActivity : AppCompatActivity() {
                         when (quizResult) {
                             "correct" -> {
                                 Log.d(TAG, "Word '${word.word}' answered correctly (count=${word.correctCount}).")
-                                // Quiz 정답 처리된 단어는 Study 후보에서 제거합니다.
+                                // 정답 시 해당 단어는 Study 후보에서 제거됨
                                 removeWord(word)
                                 displayNextWord()
                             }
                             "wrong" -> {
-                                Log.d(TAG, "Word '${word.word}' answered wrongly (count=${word.correctCount}). Launching ForcedStudy.")
-                                // (수정 1) 오답이면 무조건 해당 단어를 ForcedStudy를 통해 바로 보여줍니다.
-                                launchForcedStudy(word)
+                                Log.d(TAG, "Word '${word.word}' answered wrongly (count=${word.correctCount}).")
+                                // 강제학습은 주석 처리되었으므로, 오답 시에도 studyList의 최신 상태를 반영하여 후보를 재계산
+                                if (word.correctCount > 0) {
+                                    removeWord(word)
+                                }
+                                displayNextWord()
                             }
                         }
                     }
                 }
             }
-            isProcessing = false
         }
-
-    // ForcedStudyActivity 결과 수신 launcher
-//    private val forcedStudyLauncher =
-//        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-//            lastQuizWord?.let { word ->
-//                Log.d(TAG, "ForcedStudy returned for '${word.word}' (count=${word.correctCount}).")
-//                // (수정 1) 오답 후 ForcedStudy에서 종료되면, 무조건 바로 그 단어를 Study 화면에 보여줍니다.
-//                displayStudyWord()
-//            }
-//            isProcessing = false
-//        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityStudyBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Study 후보 초기 구성: correctCount가 0인 단어들만 포함합니다.
+        // 초기 Study 후보 풀 구성 (correctCount가 0인 단어들)
         studyList = WordData.localWords.filter { it.correctCount == 0 }.toMutableList()
 
-        // 만약 전체 단어 중 correctCount가 3 미만인 단어가 없다면 학습을 종료합니다.
+        // 전체 단어 중 암기 대상( correctCount < 3 )이 없으면 종료
         if (WordData.localWords.filter { it.correctCount < 3 }.isEmpty()) {
             Toast.makeText(this, "오늘의 학습완료!", Toast.LENGTH_LONG).show()
             finish()
@@ -102,10 +88,10 @@ class StudyActivity : AppCompatActivity() {
         }
         currentIndex = 0
 
-        // Study 후보가 비어 있으면 바로 Quiz 후보에서 단어를 선택해 Quiz로 진행합니다.
         if (studyList.isNotEmpty()) {
             displayStudyWord(studyList[currentIndex])
         } else {
+            // Study 후보가 없으면 Quiz 후보 풀에서 진행
             val quizCandidates = WordData.localWords.filter { it.hasStudied && it.correctCount in 0..2 }
             if (quizCandidates.isNotEmpty()) {
                 launchQuiz(quizCandidates.random())
@@ -115,11 +101,10 @@ class StudyActivity : AppCompatActivity() {
             }
         }
 
-        // 버튼 클릭 시 Study 모드 또는 Quiz 모드를 결정하는 랜덤 처리
         binding.btnNext.setOnClickListener {
             if (isProcessing) return@setOnClickListener
 
-            // 만약 모든 단어가 암기되어 있다면 종료.
+            // 전체 단어 중 학습 대상이 없으면 종료
             if (WordData.localWords.filter { it.correctCount < 3 }.isEmpty()) {
                 Toast.makeText(this, "오늘의 학습완료!", Toast.LENGTH_LONG).show()
                 finish()
@@ -127,47 +112,62 @@ class StudyActivity : AppCompatActivity() {
             }
             isProcessing = true
 
+            // 현재 화면에 보여지는 단어가 최신 상태( correctCount == 0 )인지 확인
+            val currentWord = studyList.getOrNull(currentIndex)
+            if (currentWord == null || currentWord.correctCount > 0) {
+                // 만약 현재 단어가 더 이상 Study 대상이 아니면 후보를 재계산
+                displayNextWord()
+                isProcessing = false
+                return@setOnClickListener
+            }
+
             if (studyList.isNotEmpty()) {
-                val currentWord = studyList[currentIndex]
                 if (Math.random() < QUIZ_PROBABILITY) {
                     Log.d(TAG, "Launching QuizActivity for studied word '${currentWord.word}'")
                     launchQuiz(currentWord)
                 } else {
-                    // "넘기기" 처리: 다음 Study 후보를 표시
                     currentIndex++
                     if (currentIndex < studyList.size) {
                         displayStudyWord(studyList[currentIndex])
                     } else {
-                        // (수정 2) Study 후보가 모두 소진되었으면, 재계산하여 오직 correctCount가 0인 단어만을 Study 후보로 사용.
+                        // 모든 후보 소진 시 재계산
                         displayNextWord()
                     }
-                    isProcessing = false
                 }
             } else {
-                // Study 후보가 없다면 Quiz 후보 풀에서 단어를 선택합니다.
+                // Study 후보가 없으면 Quiz 후보 풀에서 진행
                 val quizCandidates = WordData.localWords.filter { it.hasStudied && it.correctCount in 0..2 }
                 if (quizCandidates.isNotEmpty()) {
                     launchQuiz(quizCandidates.random())
                 }
-                isProcessing = false
             }
+            isProcessing = false
         }
     }
 
     override fun onResume() {
         super.onResume()
         isProcessing = false
-        if (currentIndex >= studyList.size) {
-            currentIndex = 0
+        // onResume 시에도 최신 Study 후보를 반영하도록 업데이트
+        val newStudyList = WordData.localWords.filter { it.correctCount == 0 }
+        if (newStudyList.isNotEmpty()) {
+            studyList = newStudyList.toMutableList()
+            if (currentIndex >= studyList.size) {
+                currentIndex = 0
+            }
+            displayStudyWord(studyList[currentIndex])
+        } else {
+            // Study 후보가 없으면 Quiz 후보 풀에서 진행
+            val quizCandidates = WordData.localWords.filter { it.hasStudied && it.correctCount in 0..2 }
+            if (quizCandidates.isNotEmpty()) {
+                launchQuiz(quizCandidates.random())
+            } else {
+                Toast.makeText(this, "오늘의 학습완료!", Toast.LENGTH_LONG).show()
+                finish()
+            }
         }
     }
 
-    /**
-     * displayStudyWord:
-     * - 현재 Study 후보 단어(correctCount == 0)를 Study 화면에 표시합니다.
-     * - 단어가 Study 화면에 노출되면 hasStudied 플래그를 true로 설정하여,
-     *   이후 Quiz 후보 풀에 포함되도록 합니다.
-     */
     private fun displayStudyWord(word: Word) {
         word.hasStudied = true
         binding.tvWord.text = word.word
@@ -175,11 +175,6 @@ class StudyActivity : AppCompatActivity() {
         Log.d(TAG, "Displaying Study word: '${word.word}' (correctCount=${word.correctCount}, hasStudied=${word.hasStudied})")
     }
 
-    /**
-     * launchQuiz:
-     * - Quiz 후보 풀은 "hasStudied == true && correctCount in 0..2"인 단어들을 대상으로 합니다.
-     * - 이 메소드는 해당 단어에 대해 QuizActivity를 실행하여 Quiz 모드로 전환합니다.
-     */
     private fun launchQuiz(word: Word) {
         lastQuizWord = word
         val intent = Intent(this, QuizActivity::class.java).apply {
@@ -188,25 +183,6 @@ class StudyActivity : AppCompatActivity() {
         quizActivityLauncher.launch(intent)
     }
 
-    /**
-     * launchForcedStudy:
-     * - Quiz에서 오답 처리된 단어에 대해 ForcedStudyActivity를 실행합니다.
-     * - (수정 1) 오답 처리된 단어는 반드시 ForcedStudy를 통해 바로 그 단어를 보여줍니다.
-     */
-    private fun launchForcedStudy(word: Word) {
-        lastQuizWord = word
-        val intent = Intent(this, ForcedStudyActivity::class.java).apply {
-            putExtra("wordId", word.id)
-        }
-        //forcedStudyLauncher.launch(intent)
-    }
-
-    /**
-     * removeWord:
-     * - Study 후보 풀에서 해당 단어를 제거합니다.
-     * - Study 후보 풀은 오직 correctCount가 0인 단어들이므로,
-     *   Quiz를 통해 정답 처리되어 correctCount가 0보다 커지면 제거합니다.
-     */
     private fun removeWord(word: Word) {
         val index = studyList.indexOfFirst { it.id == word.id }
         if (index != -1) {
@@ -217,21 +193,15 @@ class StudyActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * displayNextWord:
-     * - Study 후보 풀을 재계산하여, 오직 correctCount == 0인 단어들만 포함합니다.
-     * - 만약 재계산된 Study 후보 풀이 비어 있으면, Quiz 후보 풀( hasStudied == true && correctCount in 0..2)에서 단어를 선택해 Quiz로 전환합니다.
-     * - 모든 단어가 완전 암기( correctCount == 3)되면 학습 세션을 종료합니다.
-     */
     private fun displayNextWord() {
-        // (수정 2) 현재 상태에서 다시 Study 후보 풀을 재계산
+        // 최신 Study 후보를 재계산 (correctCount가 0인 단어들)
         val newStudyList = WordData.localWords.filter { it.correctCount == 0 }
         if (newStudyList.isNotEmpty()) {
             studyList = newStudyList.toMutableList()
             currentIndex = 0
             displayStudyWord(studyList[currentIndex])
         } else {
-            // Study 후보가 없으면, Quiz 후보 풀에서 단어를 선택합니다.
+            // Study 후보가 없으면 Quiz 후보로 전환
             val quizCandidates = WordData.localWords.filter { it.hasStudied && it.correctCount in 0..2 }
             if (quizCandidates.isNotEmpty()) {
                 launchQuiz(quizCandidates.random())
