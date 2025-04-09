@@ -1,19 +1,19 @@
 package com.example.english_app_studypart.datas
 
-// 단어 데이터 클래스
 data class Word(
-    val id: Int, // 고유 식별자
-    val word: String, // 영어 단어
-    val meaning: String, // 뜻
-    var correctCount: Int = 0,  // 퀴즈에서 맞힌 횟수 (시나리오의 quizCount 역할, 최대 3)
-    var hasStudied: Boolean = false  // 학습 화면에 노출된 적이 있는지 (Quiz 후보 조건에 사용)
+    val id: Int,
+    val word: String,
+    val meaning: String,
+    var correctCount: Int = 0,
+    var hasStudied: Boolean = false,
+    // var needsReviewToday: Boolean = false, // 복습 기능 제외
+    var studyScreenAppearances: Int = 0 // ⭐ 추가: 랜덤 학습 화면 노출 횟수
 ) {
-    // --- 시나리오 반영 편의 프로퍼티 (선택 사항) ---
-    // 학습 후보인지 확인 (correctCount == 0)
+    // 학습 후보 조건 수정: 노출 횟수 < 3 추가
     val isLearningCandidate: Boolean
-        get() = correctCount == 0
+        get() = correctCount == 0 && studyScreenAppearances < 3 // ⭐ 수정
 
-    // 퀴즈 후보인지 확인 (hasStudied == true && 0 <= correctCount <= 2)
+    // 퀴즈 후보 조건 (변경 없음)
     val isQuizCandidate: Boolean
         get() = hasStudied && correctCount in 0..2
 }

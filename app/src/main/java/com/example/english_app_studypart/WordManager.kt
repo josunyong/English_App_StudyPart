@@ -1,4 +1,4 @@
-package com.example.english_app_studypart // 패키지명 확인
+package com.example.english_app_studypart
 
 import android.content.Context
 import android.content.Intent
@@ -6,146 +6,128 @@ import android.util.Log
 import com.example.english_app_studypart.datas.Word
 import kotlin.random.Random
 
-// 앱의 단어 데이터 관리 및 학습/퀴즈 로직 중앙 처리 (싱글톤)
+// 학습/퀴즈 흐름만 관리 (복습 제외 버전)
 object WordManager {
 
-    private val words = mutableListOf<Word>() // 관리 대상 단어 목록
-    private const val TAG = "WordManager" // 로그 태그
+    private val words = mutableListOf<Word>()
+    private const val TAG = "WordManager"
 
-    // WordData로부터 단어 목록을 받아 초기화
+    // 초기화: studyScreenAppearances도 0으로 리셋
     fun initialize(initialWords: List<Word>) {
         words.clear()
-        words.addAll(initialWords)
-        Log.d(TAG, "WordManager initialized with ${words.size} words.")
+        // ⭐ 수정: studyScreenAppearances도 0으로 초기화, needsReviewToday 제거
+        words.addAll(initialWords.map { it.copy(studyScreenAppearances = 0) })
+        Log.d(TAG, "WordManager initialized. Appearances reset.")
     }
 
-    // ID로 특정 Word 객체 찾기
-    fun findWordById(id: Int): Word? {
-        return words.find { it.id == id }
+    fun findWordById(id: Int): Word? = words.find { it.id == id }
+    fun getAllWords(): List<Word> = words.toList() // 전체 단어 목록 (읽기 전용)
+
+    fun markAsStudied(wordId: Int) { /* 변경 없음 */
+        findWordById(wordId)?.let{if(!it.hasStudied){it.hasStudied=true;Log.d(TAG,"ID $wordId studied.")}}
     }
 
-    // 전체 단어 목록 반환 (읽기 전용)
-    fun getAllWords(): List<Word> = words.toList()
-
-    // --- 시나리오 반영: 단어 상태 업데이트 ---
-
-    // 학습 완료 처리: hasStudied 플래그를 true로 설정
-    fun markAsStudied(wordId: Int) {
-        findWordById(wordId)?.let {
-            if (!it.hasStudied) {
-                it.hasStudied = true
-                Log.d(TAG, "Word ID $wordId ('${it.word}') marked as studied.")
-            }
-        }
-    }
-
-    // 퀴즈 결과 반영: correctCount 업데이트 후 업데이트된 단어 반환
+    // 퀴즈 결과 반영 (복습 상태 설정 로직 제거)
     fun updateQuizCount(wordId: Int, isCorrect: Boolean): Word? {
         val word = findWordById(wordId)
         word?.let {
-            if (isCorrect) {
-                // 정답: correctCount 증가 (최대 3)
-                if (it.correctCount < 3) {
-                    it.correctCount++
-                    Log.d(TAG, "Word ID $wordId ('${it.word}') quiz count incremented to ${it.correctCount}.")
-                }
+            // val oldCount = it.correctCount // 복습 로직 없으므로 제거 가능
+            if (isCorrect) { if (it.correctCount < 3) it.correctCount++ }
+            else { if (it.correctCount > 0) it.correctCount-- }
+            Log.d(TAG, "ID $wordId quiz count updated to ${it.correctCount}.")
+            // ⭐ 복습 상태 설정 로직 제거
+            // if (oldCount < 3 && it.correctCount == 3) { ... }
+            if (!it.hasStudied) { it.hasStudied = true; Log.d(TAG,"ID $wordId studied after quiz.")}
+        }
+        return word
+    }
+
+    // 학습 후보 목록 (count=0, appearances<3)
+    fun getLearningCandidates(): List<Word> {
+        val candidates = words.filter { it.isLearningCandidate } // isLearningCandidate 조건 사용
+        Log.d(TAG, "Learning candidates (count=0, appearances<3): ${candidates.size}")
+        return candidates
+    }
+
+    // 퀴즈 후보 목록 (변경 없음)
+    fun getQuizCandidates(): List<Word> {
+        val candidates = words.filter { it.isQuizCandidate }; Log.d(TAG, "Quiz candidates: ${candidates.size}"); return candidates
+    }
+
+    // --- 복습 관련 함수 모두 제거 ---
+    // fun getReviewCandidates()...
+    // fun markAsReviewed()...
+    // fun isReviewAvailable()...
+    // fun isReviewComplete()...
+
+    // 학습 완료 확인 (모든 단어 count=3)
+    fun isLearningComplete(): Boolean = words.isNotEmpty() && words.all { it.correctCount == 3 }
+
+    // ⭐ 추가: 랜덤 학습 화면 노출 횟수 증가 함수
+    private fun incrementStudyAppearance(wordId: Int) { // private으로 변경 가능
+        findWordById(wordId)?.let {
+            // 조건 검사 강화: count가 0이고, 아직 3 미만일 때만 증가
+            if (it.correctCount == 0 && it.studyScreenAppearances < 3) {
+                it.studyScreenAppearances++
+                Log.d(TAG, "ID $wordId ('${it.word}') study appearances incremented to ${it.studyScreenAppearances}.")
             } else {
-                // 오답: correctCount 감소 (최소 0)
-                if (it.correctCount > 0) {
-                    it.correctCount--
-                    Log.d(TAG, "Word ID $wordId ('${it.word}') quiz count decremented to ${it.correctCount}.")
-                } else {
-                    Log.d(TAG, "Word ID $wordId ('${it.word}') quiz count is already 0.")
-                }
-            }
-            // 퀴즈 시도 시 hasStudied는 항상 true여야 함
-            if (!it.hasStudied) {
-                it.hasStudied = true
-                Log.d(TAG,"Word ID $wordId ('${it.word}') marked studied after quiz attempt")
+                Log.w(TAG, "Attempted to increment study appearances for ID $wordId invalidly (count=${it.correctCount}, app=${it.studyScreenAppearances}).")
             }
         }
-        return word // 업데이트된 단어 반환 (오답 시 강제 학습 및 카운터 즉시 업데이트에 사용)
     }
 
-    // --- 시나리오 반영: 후보 단어 선정 ---
-
-    // 학습 후보 목록 가져오기 (correctCount == 0)
-    fun getLearningCandidates(): List<Word> {
-        return words.filter { it.isLearningCandidate } // Word 클래스의 편의 프로퍼티 사용
-    }
-
-    // 퀴즈 후보 목록 가져오기 (hasStudied == true && 0 <= correctCount <= 2)
-    fun getQuizCandidates(): List<Word> {
-        return words.filter { it.isQuizCandidate } // Word 클래스의 편의 프로퍼티 사용
-    }
-
-    // --- 시나리오 반영: 학습 완료 확인 ---
-
-    // 모든 단어 학습 완료 여부 확인 (모든 단어의 correctCount == 3)
-    fun isLearningComplete(): Boolean {
-        val complete = words.isNotEmpty() && words.all { it.correctCount == 3 }
-        if(complete) Log.d(TAG, "Learning complete!")
-        return complete
-    }
-
-    // --- 시나리오 반영: 다음 화면 결정 로직 ---
-
-    /**
-     * 다음에 보여줄 Activity를 결정하고 해당 Intent를 생성합니다.
-     * @param context 현재 Context
-     * @param lastIncorrectWord 직전에 틀린 단어 객체 (null이 아니면 이 단어의 학습 화면 강제)
-     * @return 다음에 시작할 Activity의 Intent, 학습 완료 시 null 반환
-     */
+    // ⭐ 수정: 함수명 및 로직 변경 (학습/퀴즈 흐름만 담당)
+    // 다음에 보여줄 학습/퀴즈 Activity 결정
     fun getNextIntent(context: Context, lastIncorrectWord: Word? = null): Intent? {
         // 1. 학습 완료 체크
         if (isLearningComplete()) {
-            Log.d(TAG, "All words mastered. No next intent.")
-            return null // 완료 시 null 반환
+            Log.d(TAG, "Learning complete. No next intent.")
+            return null // 완료 시 null 반환 -> Activity에서 MainActivity로 이동 처리
         }
 
-        // 2. 오답 직후 강제 학습 처리
+        // 2. 강제 학습 처리 (횟수 증가 X)
         if (lastIncorrectWord != null) {
-            Log.d(TAG, "Forcing study for previously incorrect word ID: ${lastIncorrectWord.id} ('${lastIncorrectWord.word}')")
-            // StudyActivity로 보내고, 대상 단어 ID 전달
+            Log.d(TAG, "Forcing study for ID: ${lastIncorrectWord.id}")
             val intent = Intent(context, StudyActivity::class.java)
             intent.putExtra(StudyActivity.EXTRA_WORD_ID, lastIncorrectWord.id)
-            return intent
+            return intent // 바로 반환
         }
 
-        // 3. 학습 및 퀴즈 후보 목록 가져오기
-        val learningCandidates = getLearningCandidates()
+        // 3. 일반적인 다음 화면 결정 (학습/퀴즈 후보 확인)
+        val learningCandidates = getLearningCandidates() // appearances < 3 조건 포함
         val quizCandidates = getQuizCandidates()
+        Log.d(TAG, "Candidates - Learning: ${learningCandidates.size}, Quiz: ${quizCandidates.size}")
 
-        Log.d(TAG, "Candidates - Learning: ${learningCandidates.size} (${learningCandidates.map { it.word }}), Quiz: ${quizCandidates.size} (${quizCandidates.map { it.word }})")
-
-        // 4. 보여줄 화면 종류 결정 (랜덤)
         val possibleActivities = mutableListOf<Class<*>>()
         if (learningCandidates.isNotEmpty()) possibleActivities.add(StudyActivity::class.java)
         if (quizCandidates.isNotEmpty()) possibleActivities.add(QuizActivity::class.java)
 
-        // 후보가 없는 예외 상황 처리 (이론상 완료 상태 외엔 없어야 함)
         if (possibleActivities.isEmpty()) {
-            Log.w(TAG, "No candidates available, but learning is not complete? Check logic.")
-            return null // 오류 또는 완료로 간주
+            // 학습/퀴즈 후보가 없는데 완료도 아닌 경우 (이론상 거의 발생 안 함)
+            // 모든 단어가 count > 0 이면서 (LC 없음), hasStudied=F 이거나 count=3 인 경우 (QC 없음)
+            Log.w(TAG, "No candidates available, but learning not complete? Check logic.")
+            // isLearningComplete 가 false 인 상황에서 이 분기에 오면 로직 오류 가능성 있음
+            // 안전하게 null 반환 -> Activity에서 완료로 간주하고 MainActivity로 갈 수 있음
+            return null
         }
 
-        // 5. Activity 종류 랜덤 선택 및 해당 후보 단어 랜덤 선택
-        val nextActivityClass = possibleActivities.random() // Study 또는 Quiz 랜덤 선택
+        // 4. Activity 종류 및 단어 랜덤 선택 후 Intent 생성
+        val nextActivityClass = possibleActivities.random()
         val intent = Intent(context, nextActivityClass)
-        val wordToShow: Word?
+        val wordToShow: Word
 
         if (nextActivityClass == StudyActivity::class.java) {
-            // 학습 화면: 학습 후보 중 랜덤 선택
+            // ⭐ 랜덤 학습 선택 시: 횟수 증가시키고 Intent에 담기
             wordToShow = learningCandidates.random()
-            Log.d(TAG, "Next Activity: Study - Word ID: ${wordToShow.id} ('${wordToShow.word}')")
-            intent.putExtra(StudyActivity.EXTRA_WORD_ID, wordToShow.id) // 단어 ID 전달
+            incrementStudyAppearance(wordToShow.id) // <--- 여기서 횟수 증가
+            Log.d(TAG, "Next: Random Study - ID: ${wordToShow.id} (App: ${wordToShow.studyScreenAppearances})")
+            intent.putExtra(StudyActivity.EXTRA_WORD_ID, wordToShow.id)
         } else { // QuizActivity
-            // 퀴즈 화면: 퀴즈 후보 중 랜덤 선택
+            // 퀴즈 선택 시: 횟수 증가 없음
             wordToShow = quizCandidates.random()
-            Log.d(TAG, "Next Activity: Quiz - Word ID: ${wordToShow.id} ('${wordToShow.word}')")
-            intent.putExtra(QuizActivity.EXTRA_WORD_ID, wordToShow.id) // 단어 ID 전달
+            Log.d(TAG, "Next: Random Quiz - ID: ${wordToShow.id}")
+            intent.putExtra(QuizActivity.EXTRA_WORD_ID, wordToShow.id)
         }
-
         return intent
     }
 }
