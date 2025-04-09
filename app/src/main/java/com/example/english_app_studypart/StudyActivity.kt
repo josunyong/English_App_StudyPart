@@ -76,15 +76,15 @@ class StudyActivity : AppCompatActivity() {
         }
 
     // ForcedStudyActivity 결과 수신 launcher
-    private val forcedStudyLauncher =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            lastQuizWord?.let { word ->
-                Log.d(TAG, "ForcedStudy returned for '${word.word}' (count=${word.correctCount}).")
-                // (수정 1) 오답 후 ForcedStudy에서 종료되면, 무조건 바로 그 단어를 Study 화면에 보여줍니다.
-                displayStudyWord(word)
-            }
-            isProcessing = false
-        }
+//    private val forcedStudyLauncher =
+//        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+//            lastQuizWord?.let { word ->
+//                Log.d(TAG, "ForcedStudy returned for '${word.word}' (count=${word.correctCount}).")
+//                // (수정 1) 오답 후 ForcedStudy에서 종료되면, 무조건 바로 그 단어를 Study 화면에 보여줍니다.
+//                displayStudyWord()
+//            }
+//            isProcessing = false
+//        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -198,7 +198,7 @@ class StudyActivity : AppCompatActivity() {
         val intent = Intent(this, ForcedStudyActivity::class.java).apply {
             putExtra("wordId", word.id)
         }
-        forcedStudyLauncher.launch(intent)
+        //forcedStudyLauncher.launch(intent)
     }
 
     /**
