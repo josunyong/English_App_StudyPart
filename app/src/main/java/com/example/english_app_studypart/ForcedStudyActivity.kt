@@ -10,8 +10,7 @@ import com.example.english_app_studypart.datas.WordData
 /**
  * ForcedStudyActivity:
  * - Quiz에서 오답 처리된 단어에 대해 강제 복습(Forced Study)을 진행합니다.
- * - 반드시 오답 처리된 그 단어(예, apple)를 즉시 보여줍니다.
- *   (요구사항 1)
+ * - 반드시 오답 처리된 그 단어를 즉시 보여줍니다.
  */
 class ForcedStudyActivity : AppCompatActivity() {
     private lateinit var binding: ActivityForcedStudyBinding
@@ -29,7 +28,7 @@ class ForcedStudyActivity : AppCompatActivity() {
             binding.tvMeaning.text = it.meaning
         }
 
-        // "넘기기" 버튼 클릭 시 ForcedStudy를 종료하고 결과를 반환합니다.
+        // "넘기기" 버튼 클릭 시 ForcedStudy를 종료하고 결과를 반환
         binding.btnNext.setOnClickListener {
             setResult(Activity.RESULT_OK)
             finish()

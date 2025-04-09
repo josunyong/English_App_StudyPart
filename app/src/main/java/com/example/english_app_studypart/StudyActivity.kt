@@ -1,214 +1,95 @@
 package com.example.english_app_studypart
 
-import android.app.Activity
-import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import com.example.english_app_studypart.databinding.ActivityStudyBinding
 import com.example.english_app_studypart.datas.Word
-import com.example.english_app_studypart.datas.WordData
 
-/**
- * StudyActivity:
- *
- * [학습 규칙]
- * 1. Study 후보: 단어의 correctCount가 0인 단어들만 Study 화면에 노출됨.
- * 2. Quiz 후보: 이미 Study 화면에 노출된 단어 중( hasStudied == true ),
- *    correctCount가 0, 1, 또는 2 인 단어들로 진행.
- * 3. 단어가 Quiz에서 정답 처리되면 correctCount가 증가하여 Study 후보에서 제외됨.
- *
- * 강제학습(ForcedStudy)은 주석 처리되어 있으므로, 오답 처리 시 대신 studyList를 재계산하도록 함.
- */
+// 학습 화면: 전달받은 단어를 보여주고 '학습됨' 상태로 변경 후, 다음 화면으로 이동
 class StudyActivity : AppCompatActivity() {
     private lateinit var binding: ActivityStudyBinding
-
-    // 초기 Study 후보: correctCount가 0인 단어들만
-    private var studyList: MutableList<Word> = mutableListOf()
-    private var currentIndex = 0
-    private var lastQuizWord: Word? = null
-
-    // Study 화면에서 Quiz로 전환할 확률 (예: 40%)
-    private val QUIZ_PROBABILITY = 0.4
-    private var isProcessing = false
+    private var currentWord: Word? = null // 현재 화면에 표시 중인 단어
 
     companion object {
+        const val EXTRA_WORD_ID = "extra_word_id" // Intent로 전달받을 단어 ID 키
         private const val TAG = "StudyActivity"
     }
-
-    // QuizActivity 결과 수신 launcher
-    private val quizActivityLauncher =
-        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            isProcessing = false
-            if (result.resultCode == Activity.RESULT_OK) {
-                val data = result.data
-                val quizResult = data?.getStringExtra("quiz_result")
-                val returnedWordId = data?.getIntExtra("wordId", -1) ?: -1
-
-                lastQuizWord?.let { word ->
-                    if (word.id != returnedWordId) {
-                        Log.e(TAG, "Returned wordId ($returnedWordId) does not match lastQuizWord.id (${word.id})")
-                    } else {
-                        when (quizResult) {
-                            "correct" -> {
-                                Log.d(TAG, "Word '${word.word}' answered correctly (count=${word.correctCount}).")
-                                // 정답 시 해당 단어는 Study 후보에서 제거됨
-                                removeWord(word)
-                                displayNextWord()
-                            }
-                            "wrong" -> {
-                                Log.d(TAG, "Word '${word.word}' answered wrongly (count=${word.correctCount}).")
-                                // 강제학습은 주석 처리되었으므로, 오답 시에도 studyList의 최신 상태를 반영하여 후보를 재계산
-                                if (word.correctCount > 0) {
-                                    removeWord(word)
-                                }
-                                displayNextWord()
-                            }
-                        }
-                    }
-                }
-            }
-        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityStudyBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // 초기 Study 후보 풀 구성 (correctCount가 0인 단어들)
-        studyList = WordData.localWords.filter { it.correctCount == 0 }.toMutableList()
+        Log.d(TAG, "onCreate called.")
 
-        // 전체 단어 중 암기 대상( correctCount < 3 )이 없으면 종료
-        if (WordData.localWords.filter { it.correctCount < 3 }.isEmpty()) {
-            Toast.makeText(this, "오늘의 학습완료!", Toast.LENGTH_LONG).show()
+        // Intent에서 표시할 단어 ID 가져오기
+        val wordId = intent.getIntExtra(EXTRA_WORD_ID, -1) // ID는 Int 타입
+        if (wordId == -1) {
+            // ID가 전달되지 않은 경우 오류 처리
+            Log.e(TAG, "Word ID not found in Intent extras.")
+            Toast.makeText(this, "오류: 표시할 단어 정보를 찾을 수 없습니다.", Toast.LENGTH_SHORT).show()
+            finish() // 액티비티 종료
+            return
+        }
+
+        // WordManager를 통해 해당 ID의 Word 객체 찾기
+        currentWord = WordManager.findWordById(wordId)
+
+        if (currentWord == null) {
+            // Word 객체를 찾지 못한 경우 오류 처리
+            Log.e(TAG, "Word object not found in WordManager for ID: $wordId")
+            Toast.makeText(this, "오류: 단어를 찾을 수 없습니다.", Toast.LENGTH_SHORT).show()
             finish()
             return
         }
-        currentIndex = 0
 
-        if (studyList.isNotEmpty()) {
-            displayStudyWord(studyList[currentIndex])
-        } else {
-            // Study 후보가 없으면 Quiz 후보 풀에서 진행
-            val quizCandidates = WordData.localWords.filter { it.hasStudied && it.correctCount in 0..2 }
-            if (quizCandidates.isNotEmpty()) {
-                launchQuiz(quizCandidates.random())
-            } else {
-                Toast.makeText(this, "오늘의 학습완료!", Toast.LENGTH_LONG).show()
-                finish()
-            }
-        }
+        // --- 시나리오 반영: 단어 표시 및 학습 상태 변경 ---
+        displayStudyWord(currentWord!!) // 찾은 단어를 화면에 표시
 
+        // '넘기기' 버튼 클릭 리스너 설정
         binding.btnNext.setOnClickListener {
-            if (isProcessing) return@setOnClickListener
-
-            // 전체 단어 중 학습 대상이 없으면 종료
-            if (WordData.localWords.filter { it.correctCount < 3 }.isEmpty()) {
-                Toast.makeText(this, "오늘의 학습완료!", Toast.LENGTH_LONG).show()
-                finish()
-                return@setOnClickListener
-            }
-            isProcessing = true
-
-            // 현재 화면에 보여지는 단어가 최신 상태( correctCount == 0 )인지 확인
-            val currentWord = studyList.getOrNull(currentIndex)
-            if (currentWord == null || currentWord.correctCount > 0) {
-                // 만약 현재 단어가 더 이상 Study 대상이 아니면 후보를 재계산
-                displayNextWord()
-                isProcessing = false
-                return@setOnClickListener
-            }
-
-            if (studyList.isNotEmpty()) {
-                if (Math.random() < QUIZ_PROBABILITY) {
-                    Log.d(TAG, "Launching QuizActivity for studied word '${currentWord.word}'")
-                    launchQuiz(currentWord)
-                } else {
-                    currentIndex++
-                    if (currentIndex < studyList.size) {
-                        displayStudyWord(studyList[currentIndex])
-                    } else {
-                        // 모든 후보 소진 시 재계산
-                        displayNextWord()
-                    }
-                }
-            } else {
-                // Study 후보가 없으면 Quiz 후보 풀에서 진행
-                val quizCandidates = WordData.localWords.filter { it.hasStudied && it.correctCount in 0..2 }
-                if (quizCandidates.isNotEmpty()) {
-                    launchQuiz(quizCandidates.random())
-                }
-            }
-            isProcessing = false
+            Log.d(TAG, "Next button clicked for Word ID: ${currentWord?.id}")
+            // WordManager를 통해 다음 화면 결정 및 이동
+            goToNextScreen()
         }
     }
 
-    override fun onResume() {
-        super.onResume()
-        isProcessing = false
-        // onResume 시에도 최신 Study 후보를 반영하도록 업데이트
-        val newStudyList = WordData.localWords.filter { it.correctCount == 0 }
-        if (newStudyList.isNotEmpty()) {
-            studyList = newStudyList.toMutableList()
-            if (currentIndex >= studyList.size) {
-                currentIndex = 0
-            }
-            displayStudyWord(studyList[currentIndex])
-        } else {
-            // Study 후보가 없으면 Quiz 후보 풀에서 진행
-            val quizCandidates = WordData.localWords.filter { it.hasStudied && it.correctCount in 0..2 }
-            if (quizCandidates.isNotEmpty()) {
-                launchQuiz(quizCandidates.random())
-            } else {
-                Toast.makeText(this, "오늘의 학습완료!", Toast.LENGTH_LONG).show()
-                finish()
-            }
-        }
-    }
-
+    // 화면에 단어와 뜻을 표시하고, '학습됨'(hasStudied=true) 상태로 변경
     private fun displayStudyWord(word: Word) {
-        word.hasStudied = true
         binding.tvWord.text = word.word
         binding.tvMeaning.text = word.meaning
-        Log.d(TAG, "Displaying Study word: '${word.word}' (correctCount=${word.correctCount}, hasStudied=${word.hasStudied})")
+        Log.d(TAG, "Displaying Study word: ID ${word.id} ('${word.word}'), Meaning: ${word.meaning}")
+
+        // --- 시나리오 반영: 학습 상태 업데이트 ---
+        // 이 화면에서 단어를 봤으므로 WordManager를 통해 hasStudied = true 로 설정
+        WordManager.markAsStudied(word.id)
     }
 
-    private fun launchQuiz(word: Word) {
-        lastQuizWord = word
-        val intent = Intent(this, QuizActivity::class.java).apply {
-            putExtra("wordId", word.id)
-        }
-        quizActivityLauncher.launch(intent)
-    }
+    // 다음 화면으로 이동하는 함수
+    private fun goToNextScreen() {
+        // --- 시나리오 반영: 다음 화면 결정은 WordManager에 위임 ---
+        // getNextIntent 호출 (이전 오답 정보 없으므로 null 전달)
+        val nextIntent = WordManager.getNextIntent(this, null)
 
-    private fun removeWord(word: Word) {
-        val index = studyList.indexOfFirst { it.id == word.id }
-        if (index != -1) {
-            studyList.removeAt(index)
-            if (index <= currentIndex && currentIndex > 0) {
-                currentIndex--
-            }
-        }
-    }
-
-    private fun displayNextWord() {
-        // 최신 Study 후보를 재계산 (correctCount가 0인 단어들)
-        val newStudyList = WordData.localWords.filter { it.correctCount == 0 }
-        if (newStudyList.isNotEmpty()) {
-            studyList = newStudyList.toMutableList()
-            currentIndex = 0
-            displayStudyWord(studyList[currentIndex])
+        if (nextIntent != null) {
+            // 다음 화면 Intent가 있으면 실행
+            startActivity(nextIntent)
         } else {
-            // Study 후보가 없으면 Quiz 후보로 전환
-            val quizCandidates = WordData.localWords.filter { it.hasStudied && it.correctCount in 0..2 }
-            if (quizCandidates.isNotEmpty()) {
-                launchQuiz(quizCandidates.random())
+            // 다음 화면 Intent가 null이면 학습 완료 또는 오류
+            if (WordManager.isLearningComplete()) {
+                Log.i(TAG, "Learning finished!")
+                Toast.makeText(this, "오늘의 학습 완료!", Toast.LENGTH_LONG).show()
+                // TODO: 학습 완료 화면으로 이동하거나 앱 종료 등의 로직 추가
+                finishAffinity() // 예: 모든 관련 액티비티 종료
             } else {
-                Toast.makeText(this, "오늘의 학습완료!", Toast.LENGTH_LONG).show()
-                finish()
+                Log.e(TAG, "Error: Could not determine next activity from StudyActivity.")
+                Toast.makeText(this, "오류: 다음 화면으로 이동할 수 없습니다.", Toast.LENGTH_SHORT).show()
+                // finish() // 오류 시 현재 액티비티만 종료할 수도 있음
             }
         }
+        // 현재 StudyActivity 종료 (다음 화면으로 넘어갔으므로)
+        finish()
     }
 }
